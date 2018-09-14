@@ -1,0 +1,177 @@
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include <iostream>
+#include <list>
+#include <stdio.h>
+using namespace cv;
+using namespace std;
+
+//------------------------------------------------
+//平面几何相关函数
+//------------------------------------------------
+
+#define eps 0.0000000001
+#define PI acos(-1.0)
+int dcmp(double x) {
+	if (fabs(x)<eps)return 0;
+	else return x<0 ? -1 : 1;
+}
+double Dot(Point A, Point B) { return A.x*B.x + A.y*B.y; }//向量点积
+double Length(Point A) { return sqrt(Dot(A, A)); }//向量模长
+double Cross(Point A, Point B) { return A.x*B.y - A.y*B.x; }//向量叉积
+double Angle(Point A, Point B) { return acos(Dot(A, B) / Length(A) / Length(B)); }//求向量的夹角
+double DistanceToLine(Point P, Point A, Point B)//点到直线的距离
+{
+	Point v1 = B - A, v2 = P - A;
+	return fabs(Cross(v1, v2)) / Length(v1);//如果不加绝对值是带有方向的距离
+}
+double DistancetoSegment(Point P, Point A, Point B) {//点到线段的距离
+	if (A == B)return Length(P - A);
+	Point v1 = B - A, v2 = P - A, v3 = P - B;
+	if (dcmp(Dot(v1, v2))<0)return  Length(v2);
+	else if (dcmp(Dot(v1, v3))>0)return Length(v3);
+	else return fabs(Cross(v1, v2)) / Length(v1);
+}
+
+
+//----------------------------------------------------------
+//
+//------------------------------------------------------------
+
+int edgeThresh = 10;
+Mat image, gray, edge, cedge;
+Point center(0, 0);//圆心
+
+Point findCircles()
+{
+	//储存检测圆的容器  
+	std::vector<Vec3f> circles;
+	//霍夫找圆
+	//参数为：待检测图像，检测结果，检测方法（这个参数唯一）,累加器的分辨率，两个圆间的距离，
+	//canny门限的上限（下限自动设为上限的一半），圆心所需要的最小的投票数，最大和最小半径  
+	HoughCircles(edge, circles, CV_HOUGH_GRADIENT, 2, 50, 200, 300, 100, 300);
+	cedge = Scalar::all(0);
+	cvtColor(edge, cedge, CV_GRAY2BGR);//将边缘提取的灰度图转换为BGR图便于画线
+
+   //找出最可能符合条件的圆盘
+   //半径最大的且满足整个圆在图像内的那个
+	int max = -1, pos = 0;
+	for (size_t i = 0; i < circles.size(); i++)
+	{
+		Vec3f f = circles[i];
+
+		if (f[2]>max && f[0] + f[2]<edge.rows && f[0] - f[2] >= 0 && f[1] + f[2]<edge.cols && f[1] - f[2]>0)
+		{
+			max = f[2];
+			pos = i;
+		}
+		Point center(f[0], f[1]);
+		int   radius = f[2];
+		circle(cedge, center, radius, Scalar(0, 255, 255), 1);
+	}
+
+	if (circles.size() == 0 || max == -1)	{
+		printf("未找到圆.....\n");
+	}
+	else{
+	    center=Point(circles[pos][0], circles[pos][1]);//找到的圆心
+		int   radius = circles[pos][2];//找到的半径
+	   //画圆，第五个参数调高可让线更粗
+		circle(cedge, center, radius, Scalar(0, 255, 0), 1);
+		//画出圆心
+		circle(cedge, center, 1, Scalar(0, 255, 0), 1);
+	}
+	return center;
+}
+
+void findLines()
+{
+	vector<Vec2f> lines;
+	HoughLines(edge, lines, 0.5, CV_PI / 180, 100, 0, 0);
+
+	for (size_t i = 0; i < lines.size(); i++)
+	{
+		float rho = lines[i][0], theta = lines[i][1];
+		Point A, B;
+		double a = cos(theta), b = sin(theta);
+		double x0 = a * rho, y0 = b * rho;
+		A.x = cvRound(x0 + 1000 * (-b));
+		A.y = cvRound(y0 + 1000 * (a));
+		B.x = cvRound(x0 - 1000 * (-b));
+		B.y = cvRound(y0 - 1000 * (a));
+		if (DistancetoSegment(center, A, B)<30)//根据圆心到指针的距离阈值滤掉其他线段
+		{
+			line(cedge, A, B, Scalar(0, 0, i * 20 + 40), 2, CV_AA);
+		}
+	}
+}
+
+void findLinesP()
+{
+	vector<Vec4i> lines2;//线段检测
+	HoughLinesP(edge, lines2, 1, CV_PI / 180, 100, 50, 10);
+	for (size_t i = 0; i < lines2.size(); i++)
+	{
+	  Vec4i l = lines2[i];
+	  Point A(l[0], l[1]), B(l[2], l[3]);
+	  if (DistancetoSegment(center, A, B)<30)//根据圆心到指针的距离阈值滤掉其他线段
+	  {
+	    line(cedge, A, B, Scalar(255, 0, i * 20 + 40), 2, CV_AA);
+	  }
+	}
+}
+
+// define a trackbar callback
+void onTrackbar(int, void*)
+{ 
+	//磨平图像
+	blur(gray, edge, Size(3, 3));
+	//GaussianBlur(gray, edge, Size(3, 3), 2, 2);
+
+	// Run the edge detector on grayscale
+
+	Canny(edge, edge, edgeThresh, edgeThresh * 5, 3);
+
+	//寻找符合条件的圆
+	center=findCircles();
+
+	//寻找直线
+	//findLines();
+	findLinesP();
+
+	//putText(cedge, "ssd", center, cv::FONT_HERSHEY_DUPLEX, 1, cv::Scalar(0, 255, 0), 2);
+	//image.copyTo(cedge, edge);
+	imshow("Edge map", cedge);
+}
+
+
+int main(int argc, const char** argv)
+{
+
+	image = imread("C:/Users/欧阳桥梁/Pictures/Saved Pictures/dashboard1.jpg", 1);//读取图片到mat
+	//namedWindow("Lu", WINDOW_NORMAL);
+	
+
+	cedge.create(image.size(), image.type());//用image生成一个cedge
+
+	cvtColor(image, gray, CV_BGR2GRAY);      //转换为灰度图[色彩空间转换]										
+											 //void cvCvtColor( const CvArr* src, CvArr* dst, int code );
+											 //src 输入的 8-bit , 16-bit 或 32-bit 单倍精度浮点数影像. 
+											 //dst 输出的 8-bit , 16-bit 或 32-bit 单倍精度浮点数影像. 
+											 //code 色彩空间转换，通过定义 CV_<src_color_space>2<dst_color_space> 常数 (见下面). 
+											 //函数 cvCvtColor 将输入图像从一个色彩空间转换为另外一个色彩空间。
+	
+	
+	//imshow("Lu", gray);
+		 
+    // Create a window
+	namedWindow("Edge map", WINDOW_GUI_NORMAL);  
+	// create a toolbar
+	createTrackbar("Canny threshold", "Edge map", &edgeThresh, 100, onTrackbar);
+	// Show the image
+	onTrackbar(0, 0);
+
+	// Wait for a key stroke; the same function arranges events processing
+	waitKey(0);
+	return 0;
+}
