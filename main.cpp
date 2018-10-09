@@ -100,7 +100,7 @@ int findCircles(Mat& edge)
 		}
 	}
 	if (circles.size() == 0 || max == -1)	{
-		printf("未找到圆.....\n");
+		printf("can not find circles\n");
 		return -1;
 	}
 	else{
@@ -161,6 +161,11 @@ void findLinesP(Mat& edge)
 			//line(edge, A, B, Scalar(255, 0, i * 20 + 40), 2, CV_AA);
 		}
 	}
+	if (list_MyLine.empty())
+	{
+		cout << "can not find lines" << endl;
+		return;
+	}
 	//对提取出的线段进行筛选
 	list<MyLine> final_list = findMostDirection(list_MyLine);
 
@@ -210,9 +215,6 @@ void findLinesP(Mat& edge)
         A = Point(B.x + 50, B.y);
     }
     line(image, A, B, Scalar(180, 160, 0), 2, CV_AA);
-//    string output = "output: " + to_string(value);
-//    putText(edge, output, Point(20, 20),
-//            FONT_HERSHEY_DUPLEX, 0.5, Scalar(0, 0, 180));
     imshow("final", image);
 }
 
@@ -267,32 +269,70 @@ void onTrackbar2(int, void*)
 	//imshow("未操作", cedge);
 }
 
+//这个是视频提取函数
+//图片存储到path路径下
+void MyCapture()
+{
+	string file = "C:/Users/欧阳桥梁/Desktop/1.avi";
+	string path = "C:/Users/欧阳桥梁/Desktop/ship/";
+	VideoCapture cap(file);
+
+	int frame_cnt = 0;
+	int num = 0;
+	Mat img;
+
+	while (true)
+	{
+		bool success = cap.read(img);
+		if (!success) {
+			cout << "Process " << num << " frames from" << file << endl;
+			break;
+		}
+		if (img.empty()) {
+			cout << "frame capture failed." << endl;
+			break;
+		}
+
+		if (frame_cnt % 30 == 0) {
+			++num;
+			string name = path + to_string(num) + ".jpg";
+			imwrite(name, img);
+		}
+		++frame_cnt;
+	}
+	cout << cap.get(CV_CAP_PROP_FRAME_COUNT) << endl;
+	cout << cap.get(CV_CAP_PROP_FPS) << endl;
+	cap.release();
+}
+
 const char* path[] = {
-    "/Users/cbc/Desktop/altimeter/2.png",
-    "/Users/cbc/Desktop/speed-table/6.png"
+	"C:/Users/欧阳桥梁/Desktop/高度表/2.png",
+	"C:/Users/欧阳桥梁/Desktop/速度表/2.png",
+	"C:/Users/欧阳桥梁/Pictures/Saved Pictures/dashboard2.jpg",
+	"C:/Users/欧阳桥梁/Desktop/光/d83.png",
+	"C:/Users/欧阳桥梁/Desktop/ship/"
 };
 
 int main(int argc, const char** argv)
 {
-
-	/*namedWindow("操作");
-	createTrackbar("Canny threshold", "操作", &edgeThresh, 100, onTrackbar2);
-	onTrackbar2(0, 0);*/
-
-	//start = time(NULL);
-    video.open("/Users/cbc/Desktop/speed-table/speed_table.avi");
-    while(1) {
-        video >> image;
-        if (image.size().height > 500 && image.size().width > 500)
-        {
-            resize(image, image, Size(0, 0), 0.5, 0.5);
-        }
-        //imshow("origin", image);
-        cvtColor(image, gray, CV_BGR2GRAY);
-        dashboard();
-        //stop = time(NULL);
-        //cout << (stop - start) << endl;
-        waitKey(300);
-    }
+	int count = 1;
+	clock_t start, stop;
+	start = clock();
+	while (count <= 63) {
+		image = imread(path[4] + to_string(count) +".jpg", 1);
+		if (image.size().height > 500 && image.size().width > 500)
+		{
+			resize(image, image, Size(0, 0), 0.5, 0.5);
+		}
+		imshow("origin", image);
+		cvtColor(image, gray, CV_BGR2GRAY);
+		dashboard();
+		waitKey(100);
+		count++;
+	}
+	stop = clock();
+	//cout << "运行总时间  " << (stop - start) << endl;
+	//MyCapture();
+	system("pause");
 	return 0;
 }
