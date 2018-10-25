@@ -1,14 +1,16 @@
-﻿#include"opencv2/opencv.hpp"
+#include"opencv2/opencv.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 #include <iostream>
-
+#include<io.h>
+#include<thread>
+#include<mutex>
 using namespace cv;
 using namespace std;
 
 //------------------------------------------------
 //平面几何相关函数
 //------------------------------------------------
-
+//#define timeout
 #define eps 0.0000000001
 #define PI acos(-1.0)
 int dcmp(double x) {
@@ -71,13 +73,11 @@ list<MyLine> findMostDirection(list<MyLine> listLine) {
 	return result;
 }
 
-int edgeThresh = 10;
-Mat image, gray;
+int fail = 0,total=0;
 Point center(0, 0);//圆心
-VideoCapture video;
 int MAXRANGE = 0;
 
-int findCircles(Mat& edge)
+int findCircles(Mat& edge,Mat& out)
 {
 	//储存检测圆的容器  
 	std::vector<Vec3f> circles;
@@ -108,15 +108,15 @@ int findCircles(Mat& edge)
 		center = Point(circles[pos][0], circles[pos][1]);//找到的圆心
 		int   radius = circles[pos][2];//找到的半径
 	   //画圆，第五个参数调高可让线更粗
-		circle(image, center, radius, Scalar(0, 255, 0), 1);
+		circle(out, center, radius, Scalar(0, 255, 0), 1);
 		//画出圆心
-		circle(image, center, 3, Scalar(0, 255, 0), 1);
+		circle(out, center, 3, Scalar(0, 255, 0), 1);
 		//cout << "Center" << center << endl;
 	}
 	return count;
 }
 
-void findLinesP(Mat& edge)
+void findLinesP(Mat& edge,Mat& out)
 {
 	list<MyLine> list_MyLine;
 	vector<Vec4i> lines2;//线段检测
@@ -163,6 +163,12 @@ void findLinesP(Mat& edge)
 		}
 		//imshow("edge", edge);
 	}
+	if (list_MyLine.empty())
+	{
+		cout << "can not find line" << endl;
+		fail++;
+		return;
+	}
 	//对提取出的线段进行筛选
 	list<MyLine> final_list = findMostDirection(list_MyLine);
 
@@ -174,18 +180,16 @@ void findLinesP(Mat& edge)
 		aver_aY += i.start.y;
 		aver_bX += i.over.x;
 		aver_bY += i.over.y;
-		//cout << i.start <<" " << i.over << endl;
-		//line(image, i.start, i.over, Scalar(100, 0, 100), 2, CV_AA);
 	}
 	aver_k /= final_list.size();
 	aver_aX /= final_list.size();
 	aver_aY /= final_list.size();
 	aver_bX /= final_list.size();
 	aver_bY /= final_list.size();
-	//cout << aver_k << endl;
+
 	double value = aver_k / 360 * MAXRANGE;
-	cout << "读数:";
-	cout << value << endl;
+	cout << "指针角度：" << aver_k << "  表盘读数：" << value<< endl;
+
 	//四个象限以及四个特殊位置
 	Point A, B(aver_bX, aver_bY);
 	if (B.y < center.y && B.x > center.x) {
@@ -212,20 +216,22 @@ void findLinesP(Mat& edge)
 	else {
 		A = Point(B.x + 50, B.y);
 	}
-	line(image, A, B, Scalar(180, 160, 0), 2, CV_AA);
-	//    string output = "output: " + to_string(value);
-	//    putText(edge, output, Point(20, 20),
-	//            FONT_HERSHEY_DUPLEX, 0.5, Scalar(0, 0, 180));
-	imshow("final", image);
+	if (abs(aver_k - 360) < 1 || abs(aver_k - 0) < 1 || abs(aver_k - 180) < 1)
+	{
+		//我发现一个奇怪的bug，当直线斜率趋近于无穷时，即角度为360，180 时，画直线需要耗费大量时间，见异常文件夹中图片
+	}
+	else
+		line(out, A, B, Scalar(180, 160, 0), 2, CV_AA);
 }
 
-time_t start, stop;
-bool i = true;
+
 // define a trackbar callback
-void dashboard()
+void dashboard(Mat image)
 {
-	Mat edge_circle, edge_lines;
+	Mat edge_circle, edge_lines,gray;
+	Mat out = image.clone();
 	//磨平图像
+	cvtColor(image, gray, CV_BGR2GRAY);
 	blur(gray, edge_circle, Size(3, 3));
 	medianBlur(gray, edge_lines, 3);
 	Mat element = getStructuringElement(0, Size(5, 5), Point(-1, -1));
@@ -234,25 +240,44 @@ void dashboard()
 	vector<vector<Point>>contours;
 	int count = 0;
 	Mat image_circle, image_lines;
+	clock_t start, stop;
+	start = clock();
 	while (count > 3 || count < 1)
 	{
 		contours.clear();
 		Canny(edge_circle, image_circle, low, low * 4, 3);
 		findContours(image_circle, contours, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
 		drawContours(image_circle, contours, -1, Scalar(255), 2);
-		count = findCircles(image_circle);
+		count = findCircles(image_circle,out);
 		low -= 10;
+		if (low <= 0)
+		{
+			fail++;
+			cout << "can not find circles" << endl;
+			return;
+		}
 	}
-	contours.clear();
+	stop = clock();
+#ifdef timeout
+	cout << "寻找圆时间  " << (stop - start) << endl;
+#endif // timeout
+	//contours.clear();
 	Canny(edge_lines, image_lines, low, low * 3, 3);
-	findContours(image_lines, contours, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
-	drawContours(image_lines, contours, -1, Scalar(255), 2);
-	findLinesP(image_lines);
-	//imshow("final", gray);
+	//findContours(image_lines, contours, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
+	//drawContours(image_lines, contours, -1, Scalar(255), 2);
+	start = clock();
+	findLinesP(image_lines,out);
+	stop = clock();
+#ifdef timeout
+	cout << "寻找直线时间  " << (stop - start) << endl;
+#endif // timeout
+	namedWindow("final");
+	imshow("final", out);
+	waitKey(20);
 }
 void onTrackbar2(int, void*)
 {
-	Mat edge, cedge;
+	/*Mat edge, cedge;
 	cedge.create(image.size(), image.type());//用image生成一个final
 	//磨平图像
 	blur(gray, edge, Size(3, 3));
@@ -267,7 +292,7 @@ void onTrackbar2(int, void*)
 	//findLines();
 	//findLinesP(edge,final);
 
-	//imshow("未操作", cedge);
+	//imshow("未操作", cedge);*/
 }
 
 void MyCapture()
@@ -303,17 +328,94 @@ void MyCapture()
 	cap.release();
 }
 
-const char* path[] = {
-	"C:/Users/欧阳桥梁/Desktop/高度表/2.png",
-	"C:/Users/欧阳桥梁/Desktop/速度表/2.png",
-	"C:/Users/欧阳桥梁/Pictures/Saved Pictures/dashboard2.jpg",
-	"C:/Users/欧阳桥梁/Desktop/光/d83.png",
-	"C:/Users/欧阳桥梁/Desktop/ship/"
+const char* pathPhoto[] = {
+	"./速度表/",
+	"./高度表/",
+	"./异常/",
 };
+const char* pathVideo[] = {
+	"./Video/速度表1.avi",
+	"./Video/速度表2.avi",
+	"./Video/高度表1.avi",
+};
+bool iffinshed = false, ifdone = true;
+Mat g_frame;
+mutex g_mutex;
 
+void Photo(Mat image)
+{
+	clock_t start, stop;
+	start = clock();
+	if (image.size().height > 500 && image.size().width > 500)
+	{
+		resize(image, image, Size(0, 0), 0.5, 0.5);
+	}
+	dashboard(image);
+	stop = clock();
+	cout << "运行总时间  " << (stop - start) << endl;
+}
+
+void Photo(string path)
+{
+	if (_access(path.c_str(), 0) == -1)
+	{
+		cout << "未找到指定文件" << endl;
+		return;
+	}
+	Mat image = imread(path, 1);
+	Photo(image);
+}
+void playVideo(string path)
+{
+	VideoCapture capture(path);
+	while (true) {
+		Mat frame;
+		Mat edge;
+		capture >> frame;
+
+		if (frame.empty())
+		{
+			iffinshed = true;
+			break;
+		}
+		imshow("Video", frame);
+		waitKey(5);
+		if (ifdone)
+		{
+			g_frame = frame.clone();
+			g_mutex.lock();
+			ifdone = !ifdone;
+			g_mutex.unlock();
+		}
+	}
+
+}
+void Video(string path)
+{
+	thread t(playVideo, path);
+	t.detach();
+
+	while (!iffinshed)
+	{
+		if (!ifdone)
+		{
+			total++;
+			Photo(g_frame);
+			g_mutex.lock();
+			ifdone = !ifdone;
+			g_mutex.unlock();
+		}
+	}
+	cout << "总共识别 " << total << " 张图片" << "识别失败 " << fail << " 失败率 " << (double)fail / total << endl;
+
+}
 void MainPage()
 {
+	string path;
+	int num = 0;
 	int select = 0;
+	clock_t start, stop;
+	start = clock();
 	cout << "这是飞机仪表盘的识别项目";
 	cout << "本程序可以识别飞机仪表的静态图片和动态视频，读出其示数" << endl;
 	while (true)
@@ -325,6 +427,8 @@ void MainPage()
 		cout << "4. 识别高度表视频" << endl;
 		cout << "5. 识别自定义图片" << endl;
 		cin >> select;
+		stop = clock();
+		num = (stop - start + rand()) % 9 + 1;
 		switch (select)
 		{
 		default:
@@ -333,42 +437,43 @@ void MainPage()
 		case 0:
 			return;
 		case 1:
+			path = pathPhoto[0]+to_string(num)+".png";
+			cout << "识别的是" << path <<endl;
+			MAXRANGE = 360;
+			Photo(path);
 			break;
 		case 2:
-			question2();
+			path = pathPhoto[1] + to_string(num) + ".png";
+			cout << "识别的是" << path << endl;
+			MAXRANGE = 12;
+			Photo(path);
 			break;
 		case 3:
-			question3();
+			MAXRANGE = 360;
+			Video(pathVideo[0]);
+			break;
+		case 4:
+			MAXRANGE = 12;
+			Video(pathVideo[2]);
+			break;
+		case 5:
+			cout << "请输入图片的地址：";
+			cin >> path;
+			cout << "请输入仪表量程：";
+			cin >> MAXRANGE;
+			Photo(path);
+			break;
+		case 99: //这是异常图片接口，用来识别异常图片，不对外界开发
+			path = pathPhoto[3] + to_string(1) + ".jpg";		
+			Photo(path);
 			break;
 		}
 	}
 }
 int main(int argc, const char** argv)
 {
-	int count =1;
-	clock_t start, stop;
-	start = clock();
-	while (count<=63) {
-		image = imread(path[4]+to_string(count) + ".jpg",1);
-	//	image = imread(path[3], 1);
-		if (image.size().height > 500 && image.size().width > 500)
-		{
-			resize(image, image, Size(0, 0), 0.5, 0.5);
-		}
-		imshow("origin", image);
-		cvtColor(image, gray, CV_BGR2GRAY);
-		dashboard();
-		waitKey(10);
-		count++;
-	}
-	stop = clock();
-	cout << "运行总时间  " << (stop - start) << endl;
-//	MyCapture();
+	MainPage();
 	system("pause");
 	return 0;
 }
 
-void Photo()
-{
-
-}
