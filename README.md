@@ -38,19 +38,19 @@ Canny边缘检测于1986年由JOHN CANNY首次在论文《A Computational Approa
 
 
 
-<img src="./img/canny_gray.png" height="400px">
+<img src="./img/canny_gray.png" height="300px">
 
 * 利用Canny，findContours寻找表盘，并找出仪表盘的中心。利用直线到圆心的距离可以筛选掉大部分干扰直线。
 
 
 
-<img src="./img/img_circle.png" height="400px">
+<img src="./img/img_circle.png" height="300px">
 
 * 利用Hough法寻找直线，并利用圆心过滤
 
 ### 结果
 
-<img src="./img/output_canny.gif" height="400px">
+<img src="./img/output_canny.gif" height="300px">
 
 ## 机器学习&显著度
 
@@ -61,21 +61,21 @@ Canny边缘检测于1986年由JOHN CANNY首次在论文《A Computational Approa
 * 标注图片中指针的位置并进行训练（本项目使用[百度AI平台](http://ai.baidu.com/)训练模型并返回指针所在矩形）。
 * 对图片中指针所在区域提取显著性特征，并做腐蚀处理，去除干扰Hough的噪声。
 
-<img src="/Users/cbc/Project/c++/pointer_recognization/img/sal_part_origin.png" height="100px">
+<img src="./img/sal_part_origin.png" height="100px">
 
 
 
-<img src="/Users/cbc/Project/c++/pointer_recognization/img/sal_part.png" height="100px">
+<img src="./img/sal_part.png" height="100px">
 
 
 
-<img src="/Users/cbc/Project/c++/pointer_recognization/img/sal_part_erode.png" height="100px">
+<img src="./img/sal_part_erode.png" height="100px">
 
 * 对显著性图像使用Hough法，寻找直线，并利用直线最短长度进行筛选。
 
 ### 结果
 
-<img src="/Users/cbc/Project/c++/pointer_recognization/img/output_sal.gif" height="400px">
+<img src="./img/output_sal.gif" height="300px">
 
 ## 分析
 
